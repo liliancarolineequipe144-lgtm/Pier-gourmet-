@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShoppingCart, Search, Menu as MenuIcon, X, ChevronRight, Plus, Minus, MessageCircle, PlusCircle, User, Edit2, Trash2 } from 'lucide-react';
+import { ShoppingCart, Search, Menu as MenuIcon, X, ChevronRight, Plus, Minus, MessageCircle, PlusCircle, User, Edit2, Trash2, Settings, Lock, ArrowLeft } from 'lucide-react';
 import { CATEGORIES, MENU_ITEMS, WHATSAPP_NUMBER } from './constants';
 import { CartItem, MenuItem } from './types';
 import { cn } from './lib/utils';
@@ -20,6 +20,12 @@ export default function App() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<MenuItem | null>(null);
+  const [productToDelete, setProductToDelete] = useState<MenuItem | null>(null);
+  const [view, setView] = useState<'catalog' | 'admin'>('catalog');
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
+  const [passwordError, setPasswordError] = useState(false);
   const [customerName, setCustomerName] = useState(() => {
     return typeof window !== 'undefined' ? localStorage.getItem('pier_gourmet_customer_name') || '' : '';
   });
@@ -123,10 +129,9 @@ export default function App() {
   };
 
   const handleDeleteProduct = (id: string) => {
-    if (confirm('Tem certeza que deseja excluir este produto?')) {
-      setMenuItems(prev => prev.filter(item => item.id !== id));
-      setCart(prev => prev.filter(item => item.id !== id));
-    }
+    setMenuItems(prev => prev.filter(item => item.id !== id));
+    setCart(prev => prev.filter(item => item.id !== id));
+    setProductToDelete(null);
   };
 
   const openEditModal = (item: MenuItem) => {
@@ -144,14 +149,24 @@ export default function App() {
   const cartCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
   const sendWhatsAppOrder = () => {
-    if (!customerName.trim()) {
-      alert('Por favor, informe seu nome para finalizar o pedido.');
-      return;
-    }
+    if (!customerName.trim()) return;
     const itemsList = cart.map(item => `*${item.quantity}x* ${item.name} - R$ ${(item.price * item.quantity).toFixed(2)}`).join('\n');
     const message = `*PEDIDO PIER GOURMET*\n\n*Cliente:* ${customerName}\n\n*Itens:*\n${itemsList}\n\n*Total: R$ ${cartTotal.toFixed(2)}*`;
     const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
+  };
+
+  const handleAdminAccess = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminPassword === 'pier.adm') {
+      setIsAdminAuthenticated(true);
+      setShowPasswordPrompt(false);
+      setView('admin');
+      setAdminPassword('');
+      setPasswordError(false);
+    } else {
+      setPasswordError(true);
+    }
   };
 
   return (
@@ -177,127 +192,212 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
-            <button 
-              onClick={() => setIsRegisterOpen(true)}
-              className="p-2 hover:bg-zinc-900 rounded-full transition-colors text-zinc-400 hover:text-pier-teal flex items-center gap-2"
-              title="Cadastrar Produto"
-            >
-              <PlusCircle className="w-6 h-6" />
-              <span className="hidden sm:inline text-xs font-bold uppercase tracking-wider">Cadastrar</span>
-            </button>
-            <button 
-              onClick={() => setIsCartOpen(true)}
-              className="relative p-2 hover:bg-zinc-900 rounded-full transition-colors"
-            >
-              <ShoppingCart className="w-6 h-6" />
-              {cartCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-pier-teal text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-zinc-950">
-                  {cartCount}
-                </span>
-              )}
-            </button>
+            {view === 'catalog' ? (
+              <button 
+                onClick={() => {
+                  if (isAdminAuthenticated) {
+                    setView('admin');
+                  } else {
+                    setShowPasswordPrompt(true);
+                  }
+                }}
+                className="p-2 hover:bg-zinc-900 rounded-full transition-colors text-zinc-400 hover:text-pier-teal flex items-center gap-2"
+                title="Gerenciamento"
+              >
+                <Settings className="w-6 h-6" />
+                <span className="hidden sm:inline text-xs font-bold uppercase tracking-wider">Painel</span>
+              </button>
+            ) : (
+              <button 
+                onClick={() => setView('catalog')}
+                className="p-2 hover:bg-zinc-900 rounded-full transition-colors text-zinc-400 hover:text-pier-teal flex items-center gap-2"
+                title="Voltar ao Catálogo"
+              >
+                <ArrowLeft className="w-6 h-6" />
+                <span className="hidden sm:inline text-xs font-bold uppercase tracking-wider">Catálogo</span>
+              </button>
+            )}
+            
+            {view === 'catalog' && (
+              <button 
+                onClick={() => setIsCartOpen(true)}
+                className="relative p-2 hover:bg-zinc-900 rounded-full transition-colors"
+              >
+                <ShoppingCart className="w-6 h-6" />
+                {cartCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-pier-teal text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-zinc-950">
+                    {cartCount}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </header>
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6 space-y-8">
-        {/* Hero / Search */}
-        <section className="space-y-6">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
-            <input 
-              type="text"
-              placeholder="O que você deseja saborear hoje?"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-pier-teal/50 transition-all placeholder:text-zinc-600"
-            />
-          </div>
+        {view === 'catalog' ? (
+          <>
+            {/* Hero / Search */}
+            <section className="space-y-6">
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                <input 
+                  type="text"
+                  placeholder="O que você deseja saborear hoje?"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-pier-teal/50 transition-all placeholder:text-zinc-600"
+                />
+              </div>
 
-          {/* Categories */}
-          <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
-                className={cn(
-                  "flex-none px-6 py-3 rounded-xl font-medium transition-all border",
-                  activeCategory === cat.id 
-                    ? "bg-pier-teal border-pier-teal text-white shadow-lg shadow-pier-teal/20" 
-                    : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700"
-                )}
-              >
-                {cat.name}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* Menu Grid */}
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <AnimatePresence mode="popLayout">
-            {filteredItems.map((item, index) => (
-              <motion.div
-                key={item.id}
-                layout
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                transition={{ delay: index * 0.05 }}
-                className="group bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden hover:border-pier-teal/50 transition-all"
-              >
-                <div className="aspect-[4/3] overflow-hidden relative">
-                  <img 
-                    src={item.image} 
-                    alt={item.name}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                  />
-                  <div className="absolute top-4 right-4 bg-zinc-950/80 backdrop-blur-md px-3 py-1 rounded-full border border-zinc-800">
-                    <span className="text-pier-teal font-bold">R$ {item.price.toFixed(2)}</span>
-                  </div>
-                  <div className="absolute top-4 left-4 flex gap-2">
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); openEditModal(item); }}
-                      className="p-2 bg-zinc-950/80 backdrop-blur-md rounded-full border border-zinc-800 text-white hover:text-pier-teal transition-colors shadow-lg"
-                      title="Editar"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleDeleteProduct(item.id); }}
-                      className="p-2 bg-zinc-950/80 backdrop-blur-md rounded-full border border-zinc-800 text-white hover:text-red-500 transition-colors shadow-lg"
-                      title="Excluir"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                <div className="p-6 space-y-4">
-                  <div>
-                    <h3 className="font-display font-bold text-lg group-hover:text-pier-teal transition-colors">{item.name}</h3>
-                    <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{item.description}</p>
-                  </div>
-                  <button 
-                    onClick={() => addToCart(item)}
-                    className="w-full bg-zinc-800 hover:bg-pier-teal text-white py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 group/btn"
+              {/* Categories */}
+              <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+                {CATEGORIES.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setActiveCategory(cat.id)}
+                    className={cn(
+                      "flex-none px-6 py-3 rounded-xl font-medium transition-all border",
+                      activeCategory === cat.id 
+                        ? "bg-pier-teal border-pier-teal text-white shadow-lg shadow-pier-teal/20" 
+                        : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700"
+                    )}
                   >
-                    <Plus className="w-5 h-5 group-hover/btn:rotate-90 transition-transform" />
-                    Adicionar ao Pedido
+                    {cat.name}
                   </button>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </section>
+                ))}
+              </div>
+            </section>
 
-        {filteredItems.length === 0 && (
-          <div className="py-20 text-center space-y-4">
-            <div className="w-20 h-20 bg-zinc-900 rounded-full flex items-center justify-center mx-auto">
-              <Search className="w-8 h-8 text-zinc-700" />
+            {/* Menu Grid */}
+            <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <AnimatePresence mode="popLayout">
+                {filteredItems.map((item, index) => (
+                  <motion.div
+                    key={item.id}
+                    layout
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="group bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden hover:border-pier-teal/50 transition-all"
+                  >
+                    <div className="aspect-[4/3] overflow-hidden relative">
+                      <img 
+                        src={item.image} 
+                        alt={item.name}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                      />
+                      <div className="absolute top-4 right-4 bg-zinc-950/80 backdrop-blur-md px-3 py-1 rounded-full border border-zinc-800">
+                        <span className="text-pier-teal font-bold">R$ {item.price.toFixed(2)}</span>
+                      </div>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      <div>
+                        <h3 className="font-display font-bold text-lg group-hover:text-pier-teal transition-colors">{item.name}</h3>
+                        <p className="text-zinc-500 text-sm line-clamp-2 mt-1">{item.description}</p>
+                      </div>
+                      <button 
+                        onClick={() => addToCart(item)}
+                        className="w-full bg-zinc-800 hover:bg-pier-teal text-white py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 group/btn"
+                      >
+                        <Plus className="w-5 h-5 group-hover/btn:rotate-90 transition-transform" />
+                        Adicionar ao Pedido
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </section>
+
+            {filteredItems.length === 0 && (
+              <div className="py-20 text-center space-y-4">
+                <div className="w-20 h-20 bg-zinc-900 rounded-full flex items-center justify-center mx-auto">
+                  <Search className="w-8 h-8 text-zinc-700" />
+                </div>
+                <p className="text-zinc-500">Nenhum item encontrado nesta categoria.</p>
+              </div>
+            )}
+          </>
+        ) : (
+          <section className="space-y-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="font-display font-bold text-3xl">Gerenciamento</h2>
+                <p className="text-zinc-500">Administre os produtos do catálogo</p>
+              </div>
+              <button 
+                onClick={() => setIsRegisterOpen(true)}
+                className="bg-pier-teal hover:bg-pier-teal/90 text-white px-6 py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-pier-teal/20"
+              >
+                <PlusCircle className="w-5 h-5" />
+                Cadastrar Novo Produto
+              </button>
             </div>
-            <p className="text-zinc-500">Nenhum item encontrado nesta categoria.</p>
-          </div>
+
+            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-zinc-800 bg-zinc-950/50">
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Produto</th>
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Categoria</th>
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500">Preço</th>
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-zinc-500 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800">
+                    {menuItems.map((item) => (
+                      <tr key={item.id} className="hover:bg-zinc-800/30 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-4">
+                            <img 
+                              src={item.image} 
+                              alt={item.name} 
+                              className="w-12 h-12 rounded-lg object-cover flex-none"
+                              referrerPolicy="no-referrer"
+                            />
+                            <div>
+                              <p className="font-bold text-sm">{item.name}</p>
+                              <p className="text-zinc-500 text-xs line-clamp-1">{item.description}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="text-xs font-medium px-2 py-1 bg-zinc-800 rounded-md text-zinc-400">
+                            {CATEGORIES.find(c => c.id === item.category)?.name || item.category}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 font-bold text-sm text-pier-teal">
+                          R$ {item.price.toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button 
+                              onClick={() => openEditModal(item)}
+                              className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-pier-teal transition-colors"
+                              title="Editar"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => setProductToDelete(item)}
+                              className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 transition-colors"
+                              title="Excluir"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
         )}
       </main>
 
@@ -558,6 +658,117 @@ export default function App() {
                   {editingProduct ? 'Salvar Alterações' : 'Salvar Produto'}
                 </button>
               </form>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+      {/* Password Prompt Modal */}
+      <AnimatePresence>
+        {showPasswordPrompt && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPasswordPrompt(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100]"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl z-[110] shadow-2xl p-8 space-y-6"
+            >
+              <div className="text-center space-y-2">
+                <div className="w-16 h-16 bg-pier-teal/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Lock className="w-8 h-8 text-pier-teal" />
+                </div>
+                <h2 className="font-display font-bold text-2xl">Acesso Restrito</h2>
+                <p className="text-zinc-500 text-sm">Informe a senha de administrador para acessar o painel.</p>
+              </div>
+
+              <form onSubmit={handleAdminAccess} className="space-y-4">
+                <div className="space-y-2">
+                  <input 
+                    autoFocus
+                    type="password" 
+                    placeholder="Senha de acesso"
+                    value={adminPassword}
+                    onChange={(e) => {
+                      setAdminPassword(e.target.value);
+                      setPasswordError(false);
+                    }}
+                    className={cn(
+                      "w-full bg-zinc-950 border rounded-xl py-4 px-4 focus:outline-none focus:ring-2 transition-all text-center tracking-widest",
+                      passwordError 
+                        ? "border-red-500 focus:ring-red-500/50" 
+                        : "border-zinc-800 focus:ring-pier-teal/50"
+                    )}
+                  />
+                  {passwordError && (
+                    <p className="text-red-500 text-[10px] text-center font-bold uppercase tracking-wider">Senha incorreta. Tente novamente.</p>
+                  )}
+                </div>
+                <button 
+                  type="submit"
+                  className="w-full bg-pier-teal hover:bg-pier-teal/90 text-white py-4 rounded-xl font-bold transition-all shadow-lg shadow-pier-teal/20"
+                >
+                  Entrar no Painel
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setShowPasswordPrompt(false)}
+                  className="w-full text-zinc-500 text-xs font-bold uppercase tracking-widest hover:text-zinc-300 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </form>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {productToDelete && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setProductToDelete(null)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-md z-[120]"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl z-[130] shadow-2xl p-8 space-y-6"
+            >
+              <div className="text-center space-y-2">
+                <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Trash2 className="w-8 h-8 text-red-500" />
+                </div>
+                <h2 className="font-display font-bold text-2xl">Excluir Produto?</h2>
+                <p className="text-zinc-500 text-sm">
+                  Tem certeza que deseja excluir <span className="text-white font-bold">{productToDelete.name}</span>? Esta ação não pode ser desfeita.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={() => handleDeleteProduct(productToDelete.id)}
+                  className="w-full bg-red-500 hover:bg-red-600 text-white py-4 rounded-xl font-bold transition-all shadow-lg shadow-red-500/20"
+                >
+                  Sim, Excluir
+                </button>
+                <button 
+                  onClick={() => setProductToDelete(null)}
+                  className="w-full text-zinc-500 text-xs font-bold uppercase tracking-widest hover:text-zinc-300 transition-colors py-2"
+                >
+                  Cancelar
+                </button>
+              </div>
             </motion.div>
           </>
         )}
