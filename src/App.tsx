@@ -1,9 +1,22 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShoppingCart, Search, Menu as MenuIcon, X, ChevronRight, Plus, Minus, MessageCircle, PlusCircle, User, Edit2, Trash2, Settings, Lock, ArrowLeft } from 'lucide-react';
+import { ShoppingCart, Search, Menu as MenuIcon, X, ChevronRight, Plus, Minus, MessageCircle, PlusCircle, User, Edit2, Trash2, Settings, Lock, ArrowLeft, LogIn, LogOut } from 'lucide-react';
 import { CATEGORIES, MENU_ITEMS, WHATSAPP_NUMBER } from './constants';
 import { CartItem, MenuItem } from './types';
 import { cn } from './lib/utils';
+import { db, auth, signInAnonymously } from './firebase';
+import { 
+  collection, 
+  onSnapshot, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  query, 
+  orderBy,
+  serverTimestamp 
+} from 'firebase/firestore';
+import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 
 export default function App() {
   const [activeCategory, setActiveCategory] = useState('all');
@@ -26,6 +39,8 @@ export default function App() {
   const [adminPassword, setAdminPassword] = useState('');
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
   const [passwordError, setPasswordError] = useState(false);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [customerName, setCustomerName] = useState(() => {
     return typeof window !== 'undefined' ? localStorage.getItem('pier_gourmet_customer_name') || '' : '';
   });
@@ -35,16 +50,46 @@ export default function App() {
     localStorage.setItem('pier_gourmet_customer_name', customerName);
   }, [customerName]);
   
-  // Dynamic menu items state with persistence
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('pier_gourmet_menu') : null;
-    return saved ? JSON.parse(saved) : MENU_ITEMS;
-  });
+  // Dynamic menu items state with Firebase
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
 
-  // Save to localStorage whenever menuItems change
+  // Auth state listener
   useEffect(() => {
-    localStorage.setItem('pier_gourmet_menu', JSON.stringify(menuItems));
-  }, [menuItems]);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      // If user is authenticated (anonymously or otherwise), they are admin
+      if (currentUser) {
+        setIsAdminAuthenticated(true);
+      } else {
+        setIsAdminAuthenticated(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore menu listener
+  useEffect(() => {
+    const q = query(collection(db, 'menu'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const items = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as MenuItem[];
+      
+      // If no items in Firebase yet, seed with initial items
+      if (items.length === 0 && menuItems.length === 0) {
+        // This is a one-time seed if the database is empty
+        // We'll handle this manually or just show empty
+      }
+      
+      setMenuItems(items);
+      setIsLoading(false);
+    }, (error) => {
+      console.error("Firestore error:", error);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // New product form state
   const [newProduct, setNewProduct] = useState({
@@ -84,7 +129,7 @@ export default function App() {
     });
   };
 
-  const handleRegisterProduct = (e: React.FormEvent) => {
+  const handleRegisterProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const categoryImages: Record<string, string> = {
@@ -95,27 +140,30 @@ export default function App() {
       desserts: 'https://images.unsplash.com/photo-1572490122747-3968b75cc699?q=80&w=800&auto=format&fit=crop'
     };
 
-    const product: MenuItem = {
-      id: Date.now().toString(),
+    const productData = {
       name: newProduct.name,
       description: newProduct.description,
       price: parseFloat(newProduct.price),
       category: newProduct.category,
-      image: newProduct.image || categoryImages[newProduct.category] || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=800&auto=format&fit=crop'
+      image: newProduct.image || categoryImages[newProduct.category] || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=800&auto=format&fit=crop',
+      createdAt: serverTimestamp()
     };
-    setMenuItems(prev => [...prev, product]);
-    setActiveCategory(newProduct.category);
-    setSearchQuery('');
-    setIsRegisterOpen(false);
-    setNewProduct({ name: '', description: '', price: '', category: CATEGORIES.find(c => c.id !== 'all')?.id || CATEGORIES[0].id, image: '' });
+
+    try {
+      await addDoc(collection(db, 'menu'), productData);
+      setIsRegisterOpen(false);
+      setNewProduct({ name: '', description: '', price: '', category: CATEGORIES.find(c => c.id !== 'all')?.id || CATEGORIES[0].id, image: '' });
+    } catch (error) {
+      console.error("Error adding product:", error);
+      alert("Erro ao salvar produto. Verifique se você está logado como admin.");
+    }
   };
 
-  const handleUpdateProduct = (e: React.FormEvent) => {
+  const handleUpdateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct) return;
 
-    const updatedProduct: MenuItem = {
-      ...editingProduct,
+    const updatedData = {
       name: newProduct.name,
       description: newProduct.description,
       price: parseFloat(newProduct.price),
@@ -123,15 +171,25 @@ export default function App() {
       image: newProduct.image || editingProduct.image
     };
 
-    setMenuItems(prev => prev.map(item => item.id === editingProduct.id ? updatedProduct : item));
-    setEditingProduct(null);
-    setNewProduct({ name: '', description: '', price: '', category: CATEGORIES.find(c => c.id !== 'all')?.id || CATEGORIES[0].id, image: '' });
+    try {
+      await updateDoc(doc(db, 'menu', editingProduct.id), updatedData);
+      setEditingProduct(null);
+      setNewProduct({ name: '', description: '', price: '', category: CATEGORIES.find(c => c.id !== 'all')?.id || CATEGORIES[0].id, image: '' });
+    } catch (error) {
+      console.error("Error updating product:", error);
+      alert("Erro ao atualizar produto.");
+    }
   };
 
-  const handleDeleteProduct = (id: string) => {
-    setMenuItems(prev => prev.filter(item => item.id !== id));
-    setCart(prev => prev.filter(item => item.id !== id));
-    setProductToDelete(null);
+  const handleDeleteProduct = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'menu', id));
+      setCart(prev => prev.filter(item => item.id !== id));
+      setProductToDelete(null);
+    } catch (error) {
+      console.error("Error deleting product:", error);
+      alert("Erro ao excluir produto.");
+    }
   };
 
   const openEditModal = (item: MenuItem) => {
@@ -156,14 +214,21 @@ export default function App() {
     window.open(url, '_blank');
   };
 
-  const handleAdminAccess = (e: React.FormEvent) => {
+  const handleAdminAccess = async (e: React.FormEvent) => {
     e.preventDefault();
     if (adminPassword === 'pier.adm') {
-      setIsAdminAuthenticated(true);
-      setShowPasswordPrompt(false);
-      setView('admin');
-      setAdminPassword('');
-      setPasswordError(false);
+      try {
+        if (!user) {
+          await signInAnonymously(auth);
+        }
+        setView('admin');
+        setShowPasswordPrompt(false);
+        setAdminPassword('');
+        setPasswordError(false);
+      } catch (error) {
+        console.error("Login failed", error);
+        alert("Falha ao acessar o painel. Tente novamente.");
+      }
     } else {
       setPasswordError(true);
     }
