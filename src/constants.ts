@@ -1,6 +1,6 @@
 import { Category, MenuItem } from './types';
 
-export const WHATSAPP_NUMBER = ""; // Insira o número do WhatsApp aqui (ex: 5511999999999)
+export const WHATSAPP_NUMBER = "5524999432601"; // Insira o número do WhatsApp aqui (ex: 5511999999999)
 
 export const CATEGORIES: Category[] = [
   { id: 'all', name: 'Todos', icon: 'LayoutGrid' },
